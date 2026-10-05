@@ -257,6 +257,12 @@ class SaleAgreement:
         self.end_date = end_date
         self._items: dict[int, Item] = {}
 
+    @classmethod
+    def from_dict(cls, data: dict, client: Client) -> SaleAgreement:
+        """Alternative constructor from a data record: {"agreement_id": "A-101", "end_date": "2026-11-15", ...}.
+        The date arrives as text and is converted here (ValueError if it is not a real date)."""
+        return cls(data["agreement_id"], client, date.fromisoformat(data["end_date"]))
+
     def add_item(self, item: Item) -> None:
         if item.item_id in self._items:
             raise ValueError(f"Item {item.item_id} is already in agreement {self.agreement_id}")

@@ -87,7 +87,7 @@ python3 main.py
 
 **Validation:** מצב, מחיר, משך שימוש, מידה, נפח אחסון ומידות נבדקים ב-property או בבנאי, ונתון לא חוקי זורק `ValueError` עם הסבר. מעבר בין סטטוסים נבדק מול המילון `ALLOWED_TRANSITIONS`: אי אפשר, למשל, לסמן כ„נמכר” מוצר שלא נבדק.
 
-**כלים נוספים:** `@classmethod` (`from_dict`, `from_jsonl`), ‏`@staticmethod` (`is_valid_condition`), property מחושב (`commission`, `payout_amount`, `total_asking_value`), ‏`__len__` ו-`__lt__`.
+**כלים נוספים:** `@classmethod` (`Item.from_dict`, `Client.from_dict`, `SaleAgreement.from_dict`, `ItemRepository.from_jsonl`), ‏`@staticmethod` (`is_valid_condition`), property מחושב (`commission`, `payout_amount`, `total_asking_value`), ‏`__len__` ו-`__lt__`.
 
 # מבני הנתונים
 
