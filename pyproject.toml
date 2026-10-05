@@ -1,0 +1,5 @@
+[project]
+name = "yallasell"
+version = "0.1.0"
+description = "YallaSell – sell once, publish everywhere"
+requires-python = ">=3.10"
