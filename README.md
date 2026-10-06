@@ -44,3 +44,105 @@
 
 ## 9. רעיון להרחבה עתידית
 חיבור לממשקים (API) אמיתיים של פלטפורמות מכירה, ופרסום בכמה פלטפורמות במקביל. בנוסף, המרת מחירים למטבעות שונים בעזרת שירות חיצוני של שערי מטבע, כדי למכור גם בפלטפורמות בינלאומיות.
+
+---
+
+# הרצה
+
+- **גרסת Python:** ‏3.9 ומעלה (נבדק ב-3.9 עד 3.12). אין צורך בחבילות חיצוניות.
+- **הרצה:** מתיקיית השורש של המאגר:
+
+```bash
+git clone https://github.com/mat2610/YallaSell-Project.git
+cd YallaSell-Project
+python3 main.py
+```
+
+`main.py` טוען את `data/sample_data.jsonl`, ממיר כל שורה לאובייקט, ומדגים לפי הסדר: OOP, תור FIFO, תור עדיפויות, מילונים, קבוצות, רשימות ומיון, Iterator, Generator, Pipeline עצל ו-Context Manager (גם במצב רגיל וגם בחריגה).
+
+# מפת קבצים
+
+| קובץ | תפקיד |
+|---|---|
+| `yallasell/models.py` | המחלקות העסקיות: לקוח, מוצר וסוגיו, הסכם מכירה, ערוצי מכירה, מודעה, מכירה |
+| `yallasell/repository.py` | קריאת קובץ הנתונים שורה אחר שורה, המרה לאובייקטים, בדיקת הנתונים ואיתור לפי מזהה |
+| `yallasell/processing.py` | עיבוד אוספים: deque, heapq, dict, set, list/tuple, comprehensions ומיון |
+| `yallasell/iterators.py` | Iterable ו-Iterator מותאמים, Generator ו-Pipeline עצל |
+| `yallasell/context_managers.py` | ה-Context Manager ‏`ReviewSession` |
+| `yallasell/__init__.py` | הגדרת החבילה |
+| `data/sample_data.jsonl` | 18 רשומות תקינות שנוצרו ב-AI + 4 שורות שגויות בכוונה |
+| `main.py` | תרחיש ההדגמה המלא בלבד |
+| `AI_USAGE.md` | תיעוד השימוש ב-AI |
+| `.gitignore`, `pyproject.toml` | קבצים להתעלמות והגדרות הפרויקט |
+
+# המודל מונחה העצמים
+
+**הרכבה (composition):** הסכם מכירה (`SaleAgreement`) **מכיל** מוצרים. זה קשר של „יש לו”: להסכם יש מוצרים. ההסכם מספק פעולות על האוסף: `add_item`, `remove_item`, `find_item`, `total_asking_value`, `__len__`, וגם `extend` (הלקוח ענה „כן”) ו-`close_unsold` (הלקוח ענה „לא”, ללא חיוב).
+
+**הורשה:** `Electronics`, ‏`Clothing` ו-`Furniture` יורשות מ-`Item`. זה קשר של „הוא סוג של”: בגד הוא סוג של מוצר. כל סוג מוסיף שדות משלו (נפח אחסון, מידה, מידות) ובודק אותם. גם `OwnCatalog` ו-`Marketplace` יורשות מ-`SalesChannel`.
+
+**מחלקות אבסטרקטיות:** `Item` ו-`SalesChannel` יורשות מ-`ABC`, ולכן אי אפשר ליצור מהן אובייקט ישירות (אין „מוצר כללי”). הן מגדירות את החוזה (`commission_rate`, `yearly_depreciation`, `details`, `format_ad`) וגם לוגיקה משותפת (`suggested_price`, `publish`).
+
+**פולימורפיזם:** `suggested_price()` כתובה פעם אחת ב-`Item` ומשתמשת ב-`yearly_depreciation()`, שכל סוג מממש אחרת. לכן אותה קריאה נותנת תוצאה שונה לכל סוג, בלי שרשרת `if/elif` על סוג האובייקט. כך גם `channel.publish(item)`: כל ערוץ כותב את המודעה בפורמט שלו. גם `Item.from_dict` לא משתמש ב-`if/elif`: המילון `ITEM_TYPES` ממפה כל קטגוריה למחלקה המתאימה.
+
+**Validation:** מצב, מחיר, משך שימוש, מידה, נפח אחסון ומידות נבדקים ב-property או בבנאי, ונתון לא חוקי זורק `ValueError` עם הסבר. מעבר בין סטטוסים נבדק מול המילון `ALLOWED_TRANSITIONS`: אי אפשר, למשל, לסמן כ„נמכר” מוצר שלא נבדק.
+
+**כלים נוספים:** `@classmethod` (`Item.from_dict`, `Client.from_dict`, `SaleAgreement.from_dict`, `ItemRepository.from_jsonl`), ‏`@staticmethod` (`is_valid_condition`), property מחושב (`commission`, `payout_amount`, `total_asking_value`), ‏`__len__` ו-`__lt__`.
+
+# מבני הנתונים
+
+| צורך | מבנה שנבחר | מדוע הוא מתאים |
+|---|---|---|
+| תור הבדיקה של בקשות חדשות | `deque` (FIFO) | הסדר חשוב: מי שהגיש ראשון נבדק ראשון, וזה הוגן כלפי המוכרים. `append` ו-`popleft` ב-O(1). תור ריק מחזיר `None` ולא קורס |
+| מוצרים שההסכם שלהם עומד להסתיים | `heapq` | הדחיפות קודמת לזמן ההגעה. מספר קטן יותר = **עדיפות גבוהה יותר** (פחות ימים עד הסוף). כל רשומה היא `(ימים, id, מוצר)`, וה-`id` הייחודי מכריע במקרה של שוויון. רק `heap[0]` הוא בוודאות הקטן ביותר, הרשימה עצמה לא ממוינת |
+| איתור מוצר / הסכם לפי מזהה | `dict` | גישה ישירה לפי מפתח. `get` מחזיר `None` כשמזהה חסר (מצב צפוי). **מזהה קיים נדחה** עם `ValueError`, בלי לדרוס |
+| ספירה וקיבוץ לפי קטגוריה וסטטוס | `dict` | `counts.get(key, 0) + 1`, ומעבר על `items()` עם unpacking |
+| קטגוריות ייחודיות, לקוחות לפי סטטוס | `set` | אין כפילויות, בדיקת `in` מהירה, וחיתוך/הפרש בין קבוצות לקוחות. לא מסתמכים על סדר ההדפסה |
+| אוסף מוצרים מסודר שאפשר לשנות | `list` | שומר סדר ומאפשר הוספה ומיון |
+| רשומת סיכום קבועה | `tuple` | `(id, title, price)` קצרה ובלתי ניתנת לשינוי |
+
+**Comprehensions:** list comprehension לסינון (מוצרים בפרסום) ולהמרה לרשומות, set comprehension לקטגוריות, dict comprehension לאינדקס מוצר → הסכם ול-id → כותרת.
+
+**מיון:** `sorted` עם פונקציה רגילה (`expected_payout`), עם `lambda` (מחיר), ולפי שני שדות עם tuple (קטגוריה, ואז מחיר מהגבוה לנמוך). **Unpacking עם `*`:** ‏`cheapest, *others = ...` ו-`item_id, title, *_ = row`.
+
+### פעולות שמשנות אוסף לעומת פעולות שיוצרות אוסף חדש
+
+| משנות את האוסף הקיים | יוצרות אוסף חדש |
+|---|---|
+| `queue.append`, `queue.popleft` | `sorted(...)` |
+| `heapq.heappush`, `heapq.heappop` | list / set / dict comprehension |
+| `cats.add`, `cats.discard`, `cats.remove` | `sold & listed`, `listed - sold` |
+| `counts[key] = ...` | `summary_rows(...)`, `listed_items(...)` |
+| `agreement.add_item`, `agreement.remove_item` | `repo.items` (רשימה חדשה מתוך המילון) |
+
+# הנתונים
+
+- **מקור:** הרשומות נוצרו ב-Gemini לפי פנייה מפורטת (ראו `AI_USAGE.md`), ונבדקו ותוקנו ידנית.
+- **מבנה:** בכל שורה אובייקט JSON אחד עם שדות משותפים (`id`, `agreement_id`, `client_name`, `client_city`, `end_date`, `category`, `title`, `condition`, `years_owned`, `asking_price`, `status`) ושדות לפי הסוג.
+- **טעינה:** `ItemRepository.load` פותח את הקובץ עם `with open(..., encoding="utf-8")` וקורא **שורה אחר שורה** בלולאת `for` (בלי `read()` או `readlines()`). כל שורה הופכת ל-`dict` עם `json.loads`, ואז לאובייקט עם `Item.from_dict` (‏classmethod).
+- **בדיקות:** JSON לא תקין, שדות חסרים, מזהה כפול (הראשון נשמר, הכפול נדחה), ערכים לא חוקיים (ה-validation של המחלקות) והסכם עם לקוח או תאריך סותרים. שורה שגויה נרשמת ב-`errors` עם מספר השורה, והטעינה ממשיכה. בקובץ 4 שורות שגויות בכוונה: 18 נטענות, 4 נדחות.
+
+# Iterable ו-Iterator
+
+`ItemCatalog` הוא ה-**Iterable**: הוא רק שומר את המוצרים ומממש `__iter__`. כל קריאה ל-`iter(catalog)` יוצרת **`ItemCatalogIterator` חדש**, שמחזיק את מצב המעבר (המיקום הבא) ומממש `__iter__` ו-`__next__`. בסוף המעבר נזרקת `StopIteration`. לכן שני Iterators על אותו קטלוג מתקדמים באופן עצמאי (ב-`main.py`: הראשון מגיע ל-203 בזמן שהשני מתחיל שוב מ-201). כלל המעבר: המוצרים יוצאים בסדר שבו נוספו.
+
+# Generator ו-Pipeline עצל
+
+**Generator:** ‏`items_ready_for_buyers` מחזירה עם `yield` רק מוצרים בסטטוס `listed`. כשיוצרים אותה לא קורה כלום. `next()` מריץ את הגוף עד ה-`yield` הראשון, ולולאת `for` ממשיכה מאותה נקודה. אחרי שה-Generator הסתיים הוא ריק, וכדי לעבור שוב צריך ליצור Generator חדש.
+
+**Pipeline:** ‏`affordable_listed_ids` משרשר שלושה Generator Expressions בלי רשימות ביניים: (1) מוצרים בפרסום → (2) מחיר עד 500 ₪ → (3) רק ה-id. ב-`main.py` צורכים רק את שתי התוצאות הראשונות עם `islice`, והפונקציה `watched` רושמת אילו מוצרים נקראו בפועל.
+
+- **מה מתחיל את העבודה:** בניית ה-Pipeline לא קוראת אף מוצר. העבודה מתחילה רק כשמבקשים תוצאה (`islice` / `next` / `list`).
+- **מה לא עובד:** כדי למצוא 2 תוצאות נקראו רק 4 מוצרים (201–204). ‏14 מתוך 18 לא נבדקו בכלל.
+- **ההבדל מ-list comprehension:** ‏list comprehension היה מעבד את כל 18 המוצרים בכל שלב ובונה רשימה מלאה בזיכרון, גם אם צריך רק 2 תוצאות. Generator expression מעביר מוצר אחד בכל פעם דרך כל השלבים ועוצר כשמפסיקים לבקש.
+- **למה צריך Generator חדש:** Generator זוכר את המיקום שבו נעצר ואי אפשר להחזיר אותו להתחלה. אחרי שנצרך, מעבר נוסף מחזיר כלום, ולכן כדי להתחיל מההתחלה יוצרים Generator חדש.
+
+# Context Manager
+
+`ReviewSession(item)` מסמן מוצר כ-`in_review` בזמן שבודק עובר עליו:
+
+- **`__enter__`** שומר את הסטטוס הקודם, מעביר את המוצר ל-`in_review` ומחזיר אותו ל-`as`.
+- **`__exit__`** רץ תמיד, גם כשמתרחשת חריגה בתוך ה-`with`. אם הבודק קיבל החלטה (`approved` / `rejected`), ההחלטה נשמרת. אם לא (הבדיקה נקטעה או קרתה שגיאה), המוצר חוזר לסטטוס הקודם ולא נשאר „תקוע” ב-`in_review`.
+- **`__exit__` מחזיר `False`**, כך שהחריגה **לא מוסתרת** ומגיעה לקוד שקרא. אין הצדקה עסקית להסתיר תקלה בבדיקה.
+
+ב-`main.py`: מוצר 207 מאושר בתוך הבלוק ונשאר `approved`; במוצר 203 נזרקת חריגה, היא מגיעה לקוד הקורא, והמוצר חוזר ל-`submitted`.

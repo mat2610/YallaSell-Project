@@ -64,7 +64,7 @@ class ItemRepository:
             if client is None:
                 client = Client(len(self.clients) + 1, data["client_name"], data["client_city"])
                 self.clients[client.name] = client
-            agreement = SaleAgreement(data["agreement_id"], client, end_date)
+            agreement = SaleAgreement.from_dict(data, client)
             self.agreements[agreement.agreement_id] = agreement
         elif agreement.end_date != end_date or agreement.client.name != data["client_name"]:
             raise ValueError(f"agreement {agreement.agreement_id} has a different client or end date")
