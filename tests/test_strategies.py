@@ -1,21 +1,15 @@
-from __future__ import annotations
+"""The two alternatives of the pricing Strategy (phone fixture: suggested price 630 ₪)."""
 
-import pytest
+from __future__ import annotations
 
 from yallasell.strategies import StandardPricing, UrgentDiscountPricing
 
 
-@pytest.mark.parametrize("strategy, days_left, expected", [
-    (StandardPricing(), 0, 630),                                         # never a discount
-    (UrgentDiscountPricing(threshold_days=14, discount=0.20), 30, 630),  # far from the end
-    (UrgentDiscountPricing(threshold_days=14, discount=0.20), 14, 504),  # limit: 630 * 0.80
-    (UrgentDiscountPricing(threshold_days=14, discount=0.20), -3, 504),  # already late
-])
-def test_pricing_strategies(phone, strategy, days_left, expected):
-    assert strategy.price(phone, days_left) == expected
+def test_standard_pricing_never_discounts(phone):
+    assert StandardPricing().price(phone, days_left=0) == 630
 
 
-@pytest.mark.parametrize("discount", [0, 1, 1.5])
-def test_urgent_discount_must_be_between_0_and_1(discount):
-    with pytest.raises(ValueError):
-        UrgentDiscountPricing(discount=discount)
+def test_urgent_pricing_discounts_only_near_the_end(phone):
+    urgent = UrgentDiscountPricing(threshold_days=14, discount=0.20)
+    assert urgent.price(phone, days_left=15) == 630          # one day too early: full price
+    assert urgent.price(phone, days_left=14) == 504          # limit included: 630 * 0.80

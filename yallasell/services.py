@@ -35,10 +35,6 @@ class PublishReport:
     rates: ExchangeRates | None = None
     rates_error: str | None = None
 
-    @property
-    def listed_item_ids(self) -> list[int]:
-        return sorted({listing.item.item_id for listing in self.published})
-
     def summary(self) -> str:
         if self.rates is not None:
             source = f"{self.rates.source.upper()} rates of {self.rates.rates_date}"

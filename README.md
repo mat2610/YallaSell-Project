@@ -181,7 +181,7 @@ yallasell/
   async_processing.py   איסוף סטטוס מודעות: סדרתי מול gather (סימולציה)
   threaded_processing.py PurchaseDesk: Lock סביב בדיקה + עדכון של פריט יחיד
   repository.py, processing.py, iterators.py, context_managers.py   (שלב 1, ללא שינוי)
-tests/                  44 מקרי בדיקה ב-7 קבצים + conftest.py (fixtures)
+tests/                  21 מקרי בדיקה ב-7 קבצים + conftest.py (fixtures)
 data/                   sample_data.jsonl (שלב 1), demo_rates.json (שערים להרצה ללא רשת)
 main.py                 הדגמת שלב 1 ושלב 2
 ```
@@ -207,16 +207,16 @@ main.py                 הדגמת שלב 1 ושלב 2
 
 ## 5. הוכחות שהמערכת עובדת
 
-**בדיקות:** `python -m pytest` → **44 passed**, ללא רשת וללא המתנות אמיתיות (`requests.get` ו-`time.sleep` מוחלפים ב-`patch`).
+**בדיקות:** `python -m pytest` → **21 passed**, ללא רשת וללא המתנות אמיתיות (`requests.get` ו-`time.sleep` מוחלפים ב-`patch`). מקרה אחד לכל דרישה:
 
 | קובץ | מקרים | מה נבדק |
 |---|---|---|
-| `test_models.py` | 10 | התנהגויות שלב 1: מחיר מומלץ לכל סוג, validation, מעברי סטטוס, עמלה, טעינת קובץ (`tmp_path`) |
-| `test_api_client.py` | 12 | הצלחה, Timeout, הצלחה אחרי כשל זמני, מיצוי ניסיונות, HTTP 401/404/500, שדה חסר / ערך לא תקין, JSON פגום |
-| `test_strategies.py` | 7 | שתי מדיניות המחיר ומקרי גבול (בדיוק 14 ימים, איחור) |
-| `test_services.py` | 7 | המרה לכל מטבע, מדיניות כשל, תהליך משולב: פרסום → מכירה → 3 מגיבים |
-| `test_async_processing.py` | 3 | תוצאות זהות ובסדר הקלט, חפיפת המתנות |
-| `test_threaded_processing.py` | 2 | אישור אחד בלבד מתוך 8 קונים, מצב סופי `sold` |
+| `test_models.py` | 6 | שלב 1: מחיר מומלץ לשלושת הסוגים (`parametrize`), מעבר סטטוס אסור, עמלה ותשלום, טעינת קובץ (`tmp_path`) |
+| `test_api_client.py` | 5 | הצלחה, Timeout עד מיצוי 3 ניסיונות, הצלחה אחרי כשל זמני, שגיאת HTTP ללא Retry, שדה חסר |
+| `test_strategies.py` | 2 | שתי החלופות של Strategy, כולל מקרה הגבול (14 ימים) |
+| `test_services.py` | 3 | המרה לכל מטבע, מדיניות כשל, תהליך משולב: פרסום → מכירה → 3 Observers |
+| `test_async_processing.py` | 1 | תוצאות זהות בשתי הגרסאות, בסדר הקלט |
+| `test_threaded_processing.py` | 1 | 8 קונים, אישור אחד בלבד, מצב סופי `sold` |
 | `test_agreement_expiry.py` | 3 | היכולת שפותחה ב-TDD |
 
 **חיבור אמיתי:** `python main.py --stage2-only --live`

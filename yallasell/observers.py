@@ -30,12 +30,7 @@ class SaleEvents:
         self._observers: list[SaleObserver] = []
 
     def subscribe(self, observer: SaleObserver) -> None:
-        if observer in self._observers:
-            raise ValueError("observer already subscribed")
         self._observers.append(observer)
-
-    def unsubscribe(self, observer: SaleObserver) -> None:
-        self._observers.remove(observer)
 
     def notify(self, sale: Sale, listing: Listing) -> None:
         for observer in self._observers:

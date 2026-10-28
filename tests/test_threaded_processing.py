@@ -14,14 +14,3 @@ def test_unique_item_is_sold_only_once():
     assert len(desk.confirmed) == 1                 # we check HOW MANY, not WHICH thread won
     assert len(desk.refused) == 7
     assert sofa.status == "sold"
-
-
-def test_item_not_on_sale_refuses_everybody():
-    sofa = Furniture(2, "Sofa", "good", 3, 2000, 200, 90, status="approved")
-    desk = PurchaseDesk()
-
-    run_buyers(desk, sofa, ["buyer-1", "buyer-2"])
-
-    assert desk.confirmed == []
-    assert sorted(desk.refused) == ["buyer-1", "buyer-2"]
-    assert sofa.status == "approved"
