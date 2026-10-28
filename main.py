@@ -1,15 +1,34 @@
-"""YallaSell – full demonstration of stage 1. Run:  python3 main.py"""
+"""YallaSell – demonstration of stage 1 and stage 2.
 
+    python3 main.py                 offline: exchange rates from data/demo_rates.json (SIMULATED)
+    python3 main.py --live          real exchange rates from the Frankfurter service (network)
+    python3 main.py --stage2-only   skip the stage 1 part
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import time
 from datetime import date
 from itertools import islice
 from pathlib import Path
 
 from yallasell import iterators, processing
+from yallasell.api_client import ExchangeRateClient, FileRatesClient, RatesConnectionError
+from yallasell.async_processing import (SimulatedPlatforms, StatusRequest, ads_needing_attention,
+                                        collect_concurrent, collect_sequential)
+from yallasell.config import load_settings, setup_logging
 from yallasell.context_managers import ReviewSession
-from yallasell.models import Marketplace, OwnCatalog, Sale
+from yallasell.models import Clothing, Marketplace, OwnCatalog, Sale
+from yallasell.observers import ClientNotifier, ListingCloser, SaleEvents, SalesStatistics
 from yallasell.repository import ItemRepository
+from yallasell.services import PublishingService, SalesService
+from yallasell.strategies import StandardPricing, UrgentDiscountPricing
+from yallasell.threaded_processing import PurchaseDesk, run_buyers
 
 DATA_FILE = Path(__file__).parent / "data" / "sample_data.jsonl"
+DEMO_RATES_FILE = Path(__file__).parent / "data" / "demo_rates.json"
 TODAY = date.today()
 
 
@@ -17,7 +36,7 @@ def title(text: str) -> None:
     print(f"\n{'=' * 64}\n{text}\n{'=' * 64}")
 
 
-def main() -> None:
+def stage1() -> None:
     # ------------------------------------------------------------ 1. load the file
     title("1. Loading data/sample_data.jsonl line by line")
     repo = ItemRepository.from_jsonl(DATA_FILE)
@@ -155,6 +174,134 @@ def main() -> None:
     except RuntimeError as error:
         print(f"exception reached the caller: {error}")
     print(f"after:   #{coat.item_id} is {coat.status} (restored: {session.restored})")
+
+
+# ==================================================================== STAGE 2
+
+class SimulatedOutage:
+    """Stands for the rates service being down. Used ONLY in section 14, always labelled."""
+
+    def get_rates(self, base, symbols):
+        raise RatesConnectionError("SIMULATED outage: rates service unreachable after 3 attempts")
+
+
+def stage2(live: bool) -> None:
+    settings = load_settings()
+    setup_logging(settings.log_level)
+    if live:
+        rates_client = ExchangeRateClient(settings.rates_api_url, settings.rates_timeout,
+                                          settings.rates_max_attempts, settings.rates_retry_wait)
+        mode = f"LIVE – real rates from {settings.rates_api_url}"
+    else:
+        rates_client = FileRatesClient(DEMO_RATES_FILE)
+        mode = f"OFFLINE – SIMULATED rates from data/{DEMO_RATES_FILE.name} (use --live for real rates)"
+
+    repo = ItemRepository.from_jsonl(DATA_FILE)            # fresh objects, independent of stage 1
+    agreement_of = processing.agreement_by_item(repo.agreements)
+    channels = [OwnCatalog(),
+                Marketplace("Marketplace A", 0.10),
+                Marketplace("GlobalMarket", 0.12, currency="USD"),
+                Marketplace("EuroBay", 0.10, max_title_length=30, currency="EUR")]
+
+    # ------------------------------------------------------------ 12. review + rates
+    title(f"12. Stage 2 – mode: {mode}")
+    to_publish = []
+    for item_id in (207, 214, 217):                         # new requests whose agreement is running
+        item = repo.get(item_id)
+        with ReviewSession(item):
+            item.change_status("approved")
+        to_publish.append((item, agreement_of[item_id].days_left(TODAY)))
+    print("Approved:", [f"#{item.item_id} ({days} days left)" for item, days in to_publish])
+
+    # ------------------------------------------------------------ 13. strategy + publishing
+    title("13. Strategy – price policy, then publishing on 4 channels (2 foreign)")
+    standard, urgent = StandardPricing(), UrgentDiscountPricing(threshold_days=21, discount=0.15)
+    for item, days in to_publish:
+        print(f"  #{item.item_id} {item.title:<34} {days:>4} days  "
+              f"standard {standard.price(item, days):>5} ₪   urgent policy {urgent.price(item, days):>5} ₪")
+    publisher = PublishingService(rates_client, urgent, channels)     # dependencies from outside
+    report = publisher.publish(to_publish)
+    print(report.summary())
+    if report.rates:
+        print(f"  rates used ({report.rates.source.upper()}): 1 ₪ = "
+              + ", ".join(f"{r} {c}" for c, r in report.rates.rates.items()))
+    for listing in report.published:
+        print("  ", listing)
+    for item, channel in report.held:
+        print(f"   HELD #{item.item_id} on {channel.name}: no valid {channel.currency} rate")
+
+    # ------------------------------------------------------------ 14. failure policy
+    title("14. Failure policy – rates service down (SIMULATED outage, not real data)")
+    outage_item = Clothing(900, "Demo hoodie", "good", 1, 120, "L", "Cotton", status="approved")
+    outage = PublishingService(SimulatedOutage(), StandardPricing(), channels).publish([(outage_item, 30)])
+    print(outage.summary())
+    print("  published:", [l.channel.name for l in outage.published])
+    print("  held     :", [c.name for _, c in outage.held], "-> no foreign ad with a wrong price")
+    print(f"  item status: {outage_item.status} (still on sale in Israel)")
+
+    # ------------------------------------------------------------ 15. observer
+    title("15. Observer – one sale, three reactions")
+    events = SaleEvents()
+    closer = ListingCloser(publisher.listings_by_item)
+    stats = SalesStatistics()
+    client_of = {item_id: agr.client.name for item_id, agr in agreement_of.items()}
+    notifier = ClientNotifier(client_of)
+    for observer in (closer, stats, notifier):
+        events.subscribe(observer)
+    sales = SalesService(events)
+    camera_ads = publisher.listings_by_item[207]
+    sold_ad = next((l for l in camera_ads if l.channel.is_foreign), camera_ads[0])
+    sale = sales.sell(sold_ad, sold_ad.price)
+    print("Sale:", sale)
+    print("  ads of #207 now:", {l.channel.name: l.status for l in camera_ads})
+    print("  statistics     :", stats.sales_by_channel, stats.commission_by_currency)
+    print("  message to     :", *notifier.outbox[0], sep="\n    ")
+
+    # ------------------------------------------------------------ 16. async
+    title("16. Async – status of 3 ads on 3 platforms (SIMULATED platforms)")
+    requests_ = [StatusRequest("GlobalMarket", 214), StatusRequest("EuroBay", 217),
+                 StatusRequest("Marketplace A", 214)]
+    answers = {("GlobalMarket", 214): (0.6, "active", 3),
+               ("EuroBay", 217): (0.3, "active", 41),
+               ("Marketplace A", 214): (0.2, "active", 7)}
+    start = time.perf_counter()
+    sequential = asyncio.run(collect_sequential(SimulatedPlatforms(answers), requests_))
+    t_seq = time.perf_counter() - start
+    platforms = SimulatedPlatforms(answers)
+    start = time.perf_counter()
+    concurrent = asyncio.run(collect_concurrent(platforms, requests_))
+    t_con = time.perf_counter() - start
+    print(f"sequential {t_seq:.2f}s | gather {t_con:.2f}s | same results: {sequential == concurrent}")
+    print("  result order :", [(s.channel, s.item_id) for s in concurrent], "(input order)")
+    print("  finish order :", platforms.finish_order)
+    for s in ads_needing_attention(concurrent, min_views=10):
+        print(f"  few views -> consider a price drop: #{s.item_id} on {s.channel} ({s.views} views)")
+
+    # ------------------------------------------------------------ 17. threads + lock
+    title("17. Threads – 3 buyers press 'buy' on the same unique item at the same time")
+    action_cam = repo.get(216)
+    desk = PurchaseDesk(processing_delay=0.05)
+    run_buyers(desk, action_cam, ["buyer on GlobalMarket", "buyer on EuroBay", "buyer on Marketplace A"])
+    print(f"confirmed: {len(desk.confirmed)} | refused: {len(desk.refused)} | "
+          f"item #{action_cam.item_id} is {action_cam.status}")
+
+    # ------------------------------------------------------------ 18. TDD capability
+    title("18. Ended agreements – listed items expire, client is asked (developed with TDD)")
+    for agreement in repo.agreements.values():
+        for item in agreement.expire_overdue(TODAY):
+            print(f"  #{item.item_id} {item.title} -> {item.status}; ask {agreement.client.name}: "
+                  f"extend (extend) or take back free (close_unsold)?")
+    print(f"\nRates used in this run: {'REAL (live)' if live else 'SIMULATED (offline file)'}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="YallaSell demo")
+    parser.add_argument("--live", action="store_true", help="use the real exchange-rate service")
+    parser.add_argument("--stage2-only", action="store_true", help="skip the stage 1 demo")
+    args = parser.parse_args()
+    if not args.stage2_only:
+        stage1()
+    stage2(live=args.live)
 
 
 if __name__ == "__main__":

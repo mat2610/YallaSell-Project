@@ -290,6 +290,16 @@ class SaleAgreement:
     def is_expired(self, today: date) -> bool:
         return today > self.end_date
 
+    def expire_overdue(self, today: date) -> list[Item]:
+        """The agreement has ended: its items still on sale become 'expired'.
+        Returns them, so the client can be asked to extend (extend) or take them back (close_unsold)."""
+        if not self.is_expired(today):
+            return []
+        overdue = [item for item in self._items.values() if item.status == "listed"]
+        for item in overdue:
+            item.change_status("expired")
+        return overdue
+
     def extend(self, days: int = 30) -> None:
         """Client answered yes: extend the agreement and put expired items back on sale."""
         if days <= 0:
@@ -318,27 +328,51 @@ class SaleAgreement:
 
 # ---------------------------------------------------------------- Sales channels
 
-class SalesChannel(ABC):
-    """Somewhere an item can be published."""
+BASE_CURRENCY = "ILS"                       # prices inside YallaSell are always in shekels
 
-    def __init__(self, name: str, fee_rate: float):
+
+def format_money(amount: float, currency: str) -> str:
+    if currency == BASE_CURRENCY:
+        return f"{amount:.0f} ₪"
+    return f"{amount:.2f} {currency}"
+
+
+class SalesChannel(ABC):
+    """Somewhere an item can be published. Each channel sells in one currency."""
+
+    def __init__(self, name: str, fee_rate: float, currency: str = BASE_CURRENCY):
         if not 0 <= fee_rate < 1:
             raise ValueError(f"Fee rate must be between 0 and 1, got {fee_rate!r}")
+        if not (isinstance(currency, str) and len(currency) == 3 and currency.isupper()):
+            raise ValueError(f"Currency must be a 3-letter code like 'USD', got {currency!r}")
         self.name = name
         self.fee_rate = fee_rate
+        self.currency = currency
+
+    @property
+    def is_foreign(self) -> bool:
+        """A foreign channel needs an exchange rate before an ad can be published."""
+        return self.currency != BASE_CURRENCY
 
     @abstractmethod
-    def format_ad(self, item: Item) -> str:
-        """Each channel writes the ad in its own format."""
+    def format_ad(self, item: Item, price: float) -> str:
+        """Each channel writes the ad in its own format. price is in the channel's currency."""
 
-    def publish(self, item: Item) -> Listing:
-        return Listing(item, self, self.format_ad(item))
+    def publish(self, item: Item, price: float | None = None) -> Listing:
+        """price: in the channel's currency. Default (stage 1): the suggested price in ₪."""
+        if price is None:
+            if self.is_foreign:
+                raise ValueError(f"{self.name} sells in {self.currency}: a converted price is required")
+            price = item.suggested_price()
+        if price <= 0:
+            raise ValueError(f"Listing price must be positive, got {price!r}")
+        return Listing(item, self, self.format_ad(item, price), price)
 
     def __str__(self) -> str:
-        return f"{self.name} (fee {self.fee_rate:.0%})"
+        return f"{self.name} (fee {self.fee_rate:.0%}, {self.currency})"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(name={self.name!r}, fee_rate={self.fee_rate})"
+        return f"{type(self).__name__}(name={self.name!r}, fee_rate={self.fee_rate}, currency={self.currency!r})"
 
 
 class OwnCatalog(SalesChannel):
@@ -347,21 +381,22 @@ class OwnCatalog(SalesChannel):
     def __init__(self):
         super().__init__("YallaSell catalog", 0.0)
 
-    def format_ad(self, item: Item) -> str:
+    def format_ad(self, item: Item, price: float) -> str:
         return (f"{item.title} – {item.details()} – condition: {item.condition}, "
-                f"{item.years_owned} years – {item.suggested_price()} ₪")
+                f"{item.years_owned} years – {format_money(price, self.currency)}")
 
 
 class Marketplace(SalesChannel):
-    """External platform (simulated at this stage): short ads with a length limit."""
+    """External platform: short ads with a length limit, in its own currency."""
 
-    def __init__(self, name: str, fee_rate: float, max_title_length: int = 40):
-        super().__init__(name, fee_rate)
+    def __init__(self, name: str, fee_rate: float, max_title_length: int = 40,
+                 currency: str = BASE_CURRENCY):
+        super().__init__(name, fee_rate, currency)
         self.max_title_length = max_title_length
 
-    def format_ad(self, item: Item) -> str:
+    def format_ad(self, item: Item, price: float) -> str:
         text = f"{item.title} ({item.details()})"
-        return text[: self.max_title_length] + f" | {item.suggested_price()} ₪"
+        return text[: self.max_title_length] + f" | {format_money(price, self.currency)}"
 
 
 # ---------------------------------------------------------------- Listing and Sale
@@ -371,11 +406,16 @@ class Listing:
 
     STATUSES = ("active", "removed", "sold")
 
-    def __init__(self, item: Item, channel: SalesChannel, text: str):
+    def __init__(self, item: Item, channel: SalesChannel, text: str, price: float):
         self.item = item
         self.channel = channel
         self.text = text
+        self.price = price                  # in channel.currency
         self.status = "active"
+
+    @property
+    def currency(self) -> str:
+        return self.channel.currency
 
     def close(self, sold: bool = False) -> None:
         if self.status != "active":
@@ -410,9 +450,15 @@ class Sale:
     def __lt__(self, other: Sale) -> bool:
         return self.price < other.price
 
+    @property
+    def currency(self) -> str:
+        return self.channel.currency
+
     def __str__(self) -> str:
-        return (f"{self.item.title} sold on {self.channel.name} for {self.price:.0f} ₪ – "
-                f"commission {self.commission:.0f} ₪, client receives {self.payout_amount:.0f} ₪")
+        cur = self.currency
+        return (f"{self.item.title} sold on {self.channel.name} for {format_money(self.price, cur)} – "
+                f"commission {format_money(self.commission, cur)}, "
+                f"client receives {format_money(self.payout_amount, cur)}")
 
     def __repr__(self) -> str:
         return f"Sale(item_id={self.item.item_id}, channel={self.channel.name!r}, price={self.price})"
