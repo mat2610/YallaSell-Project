@@ -3,11 +3,14 @@
 An item published on several platforms is unique: there is only one. If two buyers
 on two platforms press "buy" at the same moment, only one purchase may be confirmed.
 
+A purchase is: check the item is 'listed' -> take the payment and confirm -> mark it 'sold'.
+
 The dangerous order WITHOUT a lock:
   1. thread A checks: item is 'listed'            -> OK
   2. thread B checks: item is still 'listed'      -> OK   (A has not updated yet)
-  3. thread A marks the item 'sold' and confirms
-  4. thread B also confirms                       -> the same item is sold twice
+  3. thread A takes the payment, confirms, marks the item 'sold'
+  4. thread B takes the payment and confirms too  -> two buyers paid for one item
+     (and B's status change then fails: 'sold' -> 'sold' is not allowed)
 The check and the update must therefore run as ONE step, protected by the same Lock.
 """
 
@@ -34,9 +37,9 @@ class PurchaseDesk:
                 self.refused.append(buyer)
                 return False
             if self.processing_delay:
-                time.sleep(self.processing_delay)         # simulated local work, no network call here
-            item.change_status("sold")
+                time.sleep(self.processing_delay)         # simulated payment, no network call here
             self.confirmed.append(buyer)
+            item.change_status("sold")
             return True
 
 
