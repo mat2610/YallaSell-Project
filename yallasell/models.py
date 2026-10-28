@@ -290,14 +290,15 @@ class SaleAgreement:
     def is_expired(self, today: date) -> bool:
         return today > self.end_date
 
-    def expire_overdue(self, today):
-        result = []
-        if today > self.end_date:
-            for item in self._items.values():
-                if item.status == "listed":
-                    item.change_status("expired")
-                    result.append(item)
-        return result
+    def expire_overdue(self, today: date) -> list[Item]:
+        """The agreement has ended: its items still on sale become 'expired'.
+        Returns them, so the client can be asked to extend (extend) or take them back (close_unsold)."""
+        if not self.is_expired(today):
+            return []
+        overdue = [item for item in self._items.values() if item.status == "listed"]
+        for item in overdue:
+            item.change_status("expired")
+        return overdue
 
     def extend(self, days: int = 30) -> None:
         """Client answered yes: extend the agreement and put expired items back on sale."""
