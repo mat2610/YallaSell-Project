@@ -224,6 +224,6 @@ main.py                 הדגמת שלב 1 ושלב 2
 <!-- להשלים: הדביקו כאן את שורות 12–13 של הפלט מהרצה אמיתית (תאריך השערים ושערי USD/EUR) -->
 
 **TDD – `SaleAgreement.expire_overdue(today)`:** הסכם שהסתיים מעביר את המוצרים שבפרסום ל-`expired` ומחזיר אותם, כדי לשאול את הלקוח אם להאריך.
-- Red: [`4a89109`](https://github.com/mat2610/YallaSell-Project/commit/4a89109) – הבדיקות נכשלות (`AttributeError`)
-- Green: [`8a290e1`](https://github.com/mat2610/YallaSell-Project/commit/8a290e1) – מימוש מינימלי, הבדיקות עוברות
-- Refactor: [`1a3c1df`](https://github.com/mat2610/YallaSell-Project/commit/1a3c1df) – שימוש ב-`is_expired`, comprehension, טיפוסים ותיעוד, הבדיקות עדיין עוברות
+- Red: [`67f6d59`](https://github.com/mat2610/YallaSell-Project/commit/67f6d59) – הבדיקות נכשלות (`AttributeError`)
+- Green: [`3248c54`](https://github.com/mat2610/YallaSell-Project/commit/3248c54) – מימוש מינימלי, הבדיקות עוברות
+- Refactor: [`6d8f0c6`](https://github.com/mat2610/YallaSell-Project/commit/6d8f0c6) – שימוש ב-`is_expired`, comprehension, טיפוסים ותיעוד, הבדיקות עדיין עוברות
