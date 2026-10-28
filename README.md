@@ -221,7 +221,19 @@ main.py                 הדגמת שלב 1 ושלב 2
 
 **חיבור אמיתי:** `python main.py --stage2-only --live`
 
-<!-- להשלים: הדביקו כאן את שורות 12–13 של הפלט מהרצה אמיתית (תאריך השערים ושערי USD/EUR) -->
+הרצה אמיתית ב-28/10/2026 (Windows, Python 3.14), מקוצר:
+
+```
+12. Stage 2 – mode: LIVE – real rates from https://api.frankfurter.dev/v1/latest
+12 ads published, 0 held, 0 items skipped – LIVE rates of 2026-10-27
+  rates used (LIVE): 1 ₪ = 0.29409 EUR, 0.32791 USD
+   [GlobalMarket] Compact Mirrorless Camera (OpticZoom, 64 | 436.78 USD – active
+   [EuroBay] Compact Mirrorless Camera (Opt | 391.73 EUR – active
+...
+Rates used in this run: REAL (live)
+```
+
+השערים התקבלו מהשירות, נבדקו ושימשו לחישוב המחיר בכל ערוץ זר: ‏1332 ₪ × 0.32791 = 436.78 USD.
 
 **TDD – `SaleAgreement.expire_overdue(today)`:** הסכם שהסתיים מעביר את המוצרים שבפרסום ל-`expired` ומחזיר אותם, כדי לשאול את הלקוח אם להאריך.
 - Red: [`67f6d59`](https://github.com/mat2610/YallaSell-Project/commit/67f6d59) – הבדיקות נכשלות (`AttributeError`)

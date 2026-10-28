@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from dataclasses import dataclass
 
 try:                                    # python-dotenv is optional: without it, only real env vars are used
@@ -39,5 +40,6 @@ def load_settings() -> Settings:
 
 
 def setup_logging(level: str) -> None:
-    logging.basicConfig(level=level.upper(),
+    # stdout (not stderr): log lines appear in the same order as the demo output
+    logging.basicConfig(level=level.upper(), stream=sys.stdout,
                         format="%(levelname)s %(name)s: %(message)s")
