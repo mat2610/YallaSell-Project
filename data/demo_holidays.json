@@ -1,0 +1,14 @@
+{
+  "title": "Hebcal Israel April 2027 - May 2027 (saved answer for the offline demo)",
+  "range": {"start": "2027-04-15", "end": "2027-05-19"},
+  "items": [
+    {"title": "Erev Pesach", "date": "2027-04-21", "category": "holiday", "subcat": "major", "hebrew": "ערב פסח"},
+    {"title": "Pesach I", "date": "2027-04-22", "category": "holiday", "subcat": "major", "hebrew": "פסח א׳", "yomtov": true},
+    {"title": "Pesach II (CH''M)", "date": "2027-04-23", "category": "holiday", "subcat": "major", "hebrew": "פסח ב׳ (חוה״מ)"},
+    {"title": "Pesach III (CH''M)", "date": "2027-04-24", "category": "holiday", "subcat": "major", "hebrew": "פסח ג׳ (חוה״מ)"},
+    {"title": "Pesach IV (CH''M)", "date": "2027-04-25", "category": "holiday", "subcat": "major", "hebrew": "פסח ד׳ (חוה״מ)"},
+    {"title": "Pesach V (CH''M)", "date": "2027-04-26", "category": "holiday", "subcat": "major", "hebrew": "פסח ה׳ (חוה״מ)"},
+    {"title": "Pesach VI (CH''M)", "date": "2027-04-27", "category": "holiday", "subcat": "major", "hebrew": "פסח ו׳ (חוה״מ)"},
+    {"title": "Pesach VII", "date": "2027-04-28", "category": "holiday", "subcat": "major", "hebrew": "פסח ז׳", "yomtov": true}
+  ]
+}

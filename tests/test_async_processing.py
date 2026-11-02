@@ -7,10 +7,10 @@ from yallasell.async_processing import SimulatedPlatforms, StatusRequest, collec
 
 def test_both_versions_give_same_results_in_input_order():
     # the FIRST request is the slowest, so the finish order differs from the input order
-    answers = {("GlobalMarket", 1): (0.20, "active", 4),
-               ("EuroBay", 2): (0.10, "sold", 40),
+    answers = {("Marketplace B", 1): (0.20, "active", 4),
+               ("YallaSell catalog", 2): (0.10, "sold", 40),
                ("Marketplace A", 3): (0.05, "active", 25)}
-    requests = [StatusRequest("GlobalMarket", 1), StatusRequest("EuroBay", 2), StatusRequest("Marketplace A", 3)]
+    requests = [StatusRequest("Marketplace B", 1), StatusRequest("YallaSell catalog", 2), StatusRequest("Marketplace A", 3)]
 
     sequential = asyncio.run(collect_sequential(SimulatedPlatforms(answers), requests))
     platforms = SimulatedPlatforms(answers)

@@ -328,51 +328,32 @@ class SaleAgreement:
 
 # ---------------------------------------------------------------- Sales channels
 
-BASE_CURRENCY = "ILS"                       # prices inside YallaSell are always in shekels
-
-
-def format_money(amount: float, currency: str) -> str:
-    if currency == BASE_CURRENCY:
-        return f"{amount:.0f} ₪"
-    return f"{amount:.2f} {currency}"
-
-
 class SalesChannel(ABC):
-    """Somewhere an item can be published. Each channel sells in one currency."""
+    """Somewhere in Israel an item can be published. Prices are in shekels."""
 
-    def __init__(self, name: str, fee_rate: float, currency: str = BASE_CURRENCY):
+    def __init__(self, name: str, fee_rate: float):
         if not 0 <= fee_rate < 1:
             raise ValueError(f"Fee rate must be between 0 and 1, got {fee_rate!r}")
-        if not (isinstance(currency, str) and len(currency) == 3 and currency.isupper()):
-            raise ValueError(f"Currency must be a 3-letter code like 'USD', got {currency!r}")
         self.name = name
         self.fee_rate = fee_rate
-        self.currency = currency
-
-    @property
-    def is_foreign(self) -> bool:
-        """A foreign channel needs an exchange rate before an ad can be published."""
-        return self.currency != BASE_CURRENCY
 
     @abstractmethod
     def format_ad(self, item: Item, price: float) -> str:
-        """Each channel writes the ad in its own format. price is in the channel's currency."""
+        """Each channel writes the ad in its own format."""
 
     def publish(self, item: Item, price: float | None = None) -> Listing:
-        """price: in the channel's currency. Default (stage 1): the suggested price in ₪."""
+        """price in ₪, chosen by a pricing strategy. Default (stage 1): the suggested price."""
         if price is None:
-            if self.is_foreign:
-                raise ValueError(f"{self.name} sells in {self.currency}: a converted price is required")
             price = item.suggested_price()
         if price <= 0:
             raise ValueError(f"Listing price must be positive, got {price!r}")
         return Listing(item, self, self.format_ad(item, price), price)
 
     def __str__(self) -> str:
-        return f"{self.name} (fee {self.fee_rate:.0%}, {self.currency})"
+        return f"{self.name} (fee {self.fee_rate:.0%})"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(name={self.name!r}, fee_rate={self.fee_rate}, currency={self.currency!r})"
+        return f"{type(self).__name__}(name={self.name!r}, fee_rate={self.fee_rate})"
 
 
 class OwnCatalog(SalesChannel):
@@ -383,20 +364,19 @@ class OwnCatalog(SalesChannel):
 
     def format_ad(self, item: Item, price: float) -> str:
         return (f"{item.title} – {item.details()} – condition: {item.condition}, "
-                f"{item.years_owned} years – {format_money(price, self.currency)}")
+                f"{item.years_owned} years – {price:.0f} ₪")
 
 
 class Marketplace(SalesChannel):
-    """External platform: short ads with a length limit, in its own currency."""
+    """External Israeli platform (simulated): short ads with a length limit."""
 
-    def __init__(self, name: str, fee_rate: float, max_title_length: int = 40,
-                 currency: str = BASE_CURRENCY):
-        super().__init__(name, fee_rate, currency)
+    def __init__(self, name: str, fee_rate: float, max_title_length: int = 40):
+        super().__init__(name, fee_rate)
         self.max_title_length = max_title_length
 
     def format_ad(self, item: Item, price: float) -> str:
         text = f"{item.title} ({item.details()})"
-        return text[: self.max_title_length] + f" | {format_money(price, self.currency)}"
+        return text[: self.max_title_length] + f" | {price:.0f} ₪"
 
 
 # ---------------------------------------------------------------- Listing and Sale
@@ -410,12 +390,8 @@ class Listing:
         self.item = item
         self.channel = channel
         self.text = text
-        self.price = price                  # in channel.currency
+        self.price = price                  # in ₪
         self.status = "active"
-
-    @property
-    def currency(self) -> str:
-        return self.channel.currency
 
     def close(self, sold: bool = False) -> None:
         if self.status != "active":
@@ -450,15 +426,9 @@ class Sale:
     def __lt__(self, other: Sale) -> bool:
         return self.price < other.price
 
-    @property
-    def currency(self) -> str:
-        return self.channel.currency
-
     def __str__(self) -> str:
-        cur = self.currency
-        return (f"{self.item.title} sold on {self.channel.name} for {format_money(self.price, cur)} – "
-                f"commission {format_money(self.commission, cur)}, "
-                f"client receives {format_money(self.payout_amount, cur)}")
+        return (f"{self.item.title} sold on {self.channel.name} for {self.price:.0f} ₪ – "
+                f"commission {self.commission:.2f} ₪, client receives {self.payout_amount:.2f} ₪")
 
     def __repr__(self) -> str:
         return f"Sale(item_id={self.item.item_id}, channel={self.channel.name!r}, price={self.price})"

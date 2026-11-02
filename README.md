@@ -153,16 +153,16 @@ python3 main.py
 
 ## 1. מה נוסף בשלב 2?
 
-YallaSell מפרסמת עכשיו גם **בפלטפורמות בינלאומיות** (דולר ויורו), כפי שתוכנן ברעיון ההרחבה של שלב 1. המחיר בשקלים מומר לפי **שערי מטבע אמיתיים** משירות חיצוני, כך שהלקוח מגיע ליותר קונים בלי לטפל בהמרה. מדיניות התמחור מורידה מחיר למוצרים שההסכם שלהם עומד להסתיים. כשמוצר נמכר בערוץ אחד, המודעות בשאר הערוצים מוסרות, הסטטיסטיקה מתעדכנת ונכתבת הודעה ללקוח. בנוסף: בדיקת סטטוס מודעות במקביל (async), הגנה מפני מכירה כפולה של פריט יחיד (Threads + Lock), ויכולת שפותחה ב-TDD: הסכם שהסתיים מעביר את המוצרים שבפרסום ל-`expired` כדי לשאול את הלקוח אם להאריך.
+YallaSell פועלת בישראל, ולכן הסכם מכירה צריך להסתיים **ביום עסקים**: ביום הסיום פונים ללקוח („להאריך או להחזיר?”) ומחזירים לו את המוצר, ובשבת או בחג אין מי שיעשה את זה. המערכת מקבלת מ**שירות חיצוני אמיתי** את חגי ישראל, ומזיזה תאריך סיום שנופל בשישי, בשבת או ביום טוב ליום העסקים הבא. מדיניות התמחור מורידה מחיר למוצרים שההסכם שלהם עומד להסתיים. כשמוצר נמכר בערוץ אחד, המודעות בשאר הערוצים מוסרות, הסטטיסטיקה מתעדכנת ונכתבת הודעה ללקוח. בנוסף: בדיקת סטטוס מודעות במקביל (async), הגנה מפני מכירה כפולה של פריט יחיד (Threads + Lock), ויכולת שפותחה ב-TDD: הסכם שהסתיים מעביר את המוצרים שבפרסום ל-`expired` כדי לשאול את הלקוח אם להאריך.
 
 ## 2. איך מריצים?
 
-- **Python:** ‏3.9 ומעלה (נבדק ב-3.9 וב-3.13).
+- **Python:** ‏3.9 ומעלה (נבדק ב-3.9, ב-3.13 וב-3.14).
 - **התקנה:** `pip install -e ".[dev]"` (או `pip install requests python-dotenv pytest`).
 - **משתני סביבה:** אין סודות, השירות לא דורש מפתח. אפשר להעתיק את `.env.example` ל-`.env` כדי לשנות כתובת, timeout, מספר ניסיונות או רמת לוג.
 
 ```bash
-python main.py                    # ללא רשת: שערים מדומים מ-data/demo_rates.json (מסומן SIMULATED בפלט)
+python main.py                    # ללא רשת: חגים מקובץ data/demo_holidays.json (מסומן SIMULATED בפלט)
 python main.py --live             # מול השירות האמיתי (מסומן LIVE בפלט)
 python main.py --stage2-only      # רק ההדגמה של שלב 2
 python -m pytest                  # הבדיקות, ללא רשת
@@ -172,34 +172,34 @@ python -m pytest                  # הבדיקות, ללא רשת
 
 ```
 yallasell/
-  models.py             מחלקות שלב 1 + מטבע לכל ערוץ ומחיר לכל מודעה; expire_overdue (TDD)
-  api_client.py         חיבור לשירות השערים: GET, timeout, retry, בדיקת JSON ושדות, סוגי שגיאות
-  config.py             הגדרות ממשתני סביבה / .env, הגדרת logging
-  strategies.py         Strategy: StandardPricing, UrgentDiscountPricing
-  observers.py          Observer: SaleEvents + ListingCloser, SalesStatistics, ClientNotifier
-  services.py           PublishingService (שימוש עסקי בשערים ומדיניות כשל), SalesService
-  async_processing.py   איסוף סטטוס מודעות: סדרתי מול gather (סימולציה)
+  models.py              מחלקות שלב 1 + מחיר לכל מודעה; expire_overdue (TDD)
+  api_client.py          חיבור ל-Hebcal: GET, timeout, retry, בדיקת JSON ושדות, סוגי שגיאות
+  config.py              הגדרות ממשתני סביבה / .env, הגדרת logging
+  strategies.py          Strategy: StandardPricing, UrgentDiscountPricing
+  observers.py           Observer: SaleEvents + ListingCloser, SalesStatistics, ClientNotifier
+  services.py            AgreementScheduler (ימי עסקים ומדיניות כשל), PublishingService, SalesService
+  async_processing.py    איסוף סטטוס מודעות: סדרתי מול gather (סימולציה)
   threaded_processing.py PurchaseDesk: Lock סביב בדיקה + עדכון של פריט יחיד
   repository.py, processing.py, iterators.py, context_managers.py   (שלב 1, ללא שינוי)
-tests/                  21 מקרי בדיקה ב-7 קבצים + conftest.py (fixtures)
-data/                   sample_data.jsonl (שלב 1), demo_rates.json (שערים להרצה ללא רשת)
-main.py                 הדגמת שלב 1 ושלב 2
+tests/                   24 מקרי בדיקה ב-7 קבצים + conftest.py (fixtures)
+data/                    sample_data.jsonl (שלב 1), demo_holidays.json (תשובה שמורה להרצה ללא רשת)
+main.py                  הדגמת שלב 1 ושלב 2
 ```
 
 ## 4. החלטות תכנון מרכזיות
 
-**השירות החיצוני:** [Frankfurter](https://frankfurter.dev) – שערי הבנק המרכזי האירופי, חינמי וללא מפתח. בקשה: `GET /v1/latest?base=ILS&symbols=EUR,USD`.
-- `api_client.py` רק מתקשר ובודק: `raise_for_status()`, פענוח JSON, בדיקת `base`, `date` ו-`rates`, ושער חיובי לכל מטבע מבוקש. התוצאה היא אובייקט `ExchangeRates`.
+**השירות החיצוני:** [Hebcal – Jewish calendar REST API](https://www.hebcal.com/home/195/jewish-calendar-rest-api), חינמי וללא מפתח, לפי לוח החגים של ישראל. בקשה: `GET https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&i=on&start=...&end=...`.
+- `api_client.py` רק מתקשר ובודק: `raise_for_status()`, פענוח JSON, בדיקה שיש `items` ושלכל פריט יש `title` ו-`date` תקין. נשמרים רק ימים עם `"yomtov": true` (ימים שבהם העסקים סגורים); ערב חג וחול המועד אינם נחשבים. התוצאה היא אובייקט `HolidayCalendar`.
 - **Retry:** רק על `Timeout` / `ConnectionError`, עד 3 ניסיונות, עם המתנה שגדלה (1, 2 שניות). שגיאת HTTP (גם 401/403) ונתונים לא תקינים לא נשלחים שוב, כי בקשה זהה תיכשל שוב.
-- **השימוש העסקי** (`services.py`): המחיר בשקלים (לפי מדיניות התמחור) מומר למטבע של כל ערוץ זר ומתפרסם שם.
-- **בכשל:** לא מפרסמים בערוצים זרים, כי מחיר שגוי או ישן עלול למכור מתחת למחיר של הלקוח. המוצר כן מתפרסם בערוצים בשקלים, והמודעות הזרות נשמרות ב-`held` לפרסום מאוחר יותר. אם אין אף ערוץ בשקלים, המוצר נשאר `approved`.
+- **השימוש העסקי** (`services.py`): `AgreementScheduler` מבקש את החגים **פעם אחת** לכל טווח התאריכים, ומזיז כל תאריך סיום שנופל בשישי, בשבת או ביום טוב ליום העסקים הבא, עם הסיבה (למשל: פסח א׳ ← שישי ← שבת ← ראשון).
+- **בכשל:** אף תאריך סיום לא משתנה ולא מאושר. ההצעה לפי סוף השבוע בלבד נשמרת ב-`pending` לבדיקה חוזרת, כי תאריך שנופל בחג פירושו פנייה ללקוח והחזרת מוצר ביום שאיש לא עובד בו.
 
 **תבניות תכנון:**
 - **Strategy** (`PricingStrategy`): שתי מדיניות מחיר עם אותו חוזה `price(item, days_left)`. עונה על הצורך משלב 1: הורדת מחיר למוצרים דחופים. אפשר להחליף מדיניות בלי לגעת בשירות הפרסום.
 - **Observer** (`SaleEvents`): אירוע „מוצר נמכר” מפעיל שלושה מגיבים: הסרת שאר המודעות, סטטיסטיקה, הודעה ללקוח (תרחיש 2 משלב 1). `SalesService` רק מודיע על המכירה ולא יודע מי מגיב. תגובה חדשה = Observer חדש, בלי שינוי בשירות.
 - **Factory** כבר קיים משלב 1 (`Item.from_dict` עם `ITEM_TYPES`), ולכן לא נבחר כתבנית חדשה.
 
-**העברת תלויות מבחוץ:** `PublishingService` מקבל בבנאי את לקוח השערים ואת מדיניות המחיר, ו-`SalesService` מקבל את `SaleEvents`. לכן אותו שירות עובד עם השירות האמיתי (`--live`), עם קובץ (הרצה רגילה) או עם Mock (בבדיקות), וכל רכיב נבדק לבד.
+**העברת תלויות מבחוץ:** `AgreementScheduler` מקבל בבנאי את לקוח לוח השנה, `PublishingService` את מדיניות המחיר, ו-`SalesService` את `SaleEvents`. לכן אותו שירות עובד עם השירות האמיתי (`--live`), עם קובץ (הרצה רגילה) או עם Mock (בבדיקות), וכל רכיב נבדק לבד.
 
 **מקביליות:**
 - **Async:** שלוש בדיקות סטטוס עצמאיות של מודעות (פלטפורמה + מוצר), בסימולציה עם `asyncio.sleep`. הגרסה הסדרתית ממתינה לכל בדיקה. הגרסה האסינכרונית מתזמנת את כולן עם `gather`. התוצאות זהות ובסדר הקלט, גם כשסדר הסיום הפוך. מודעות פעילות עם מעט צפיות מסומנות להורדת מחיר.
@@ -207,33 +207,36 @@ main.py                 הדגמת שלב 1 ושלב 2
 
 ## 5. הוכחות שהמערכת עובדת
 
-**בדיקות:** `python -m pytest` → **21 passed**, ללא רשת וללא המתנות אמיתיות (`requests.get` ו-`time.sleep` מוחלפים ב-`patch`). מקרה אחד לכל דרישה:
+**בדיקות:** `python -m pytest` → **24 passed**, ללא רשת וללא המתנות אמיתיות (`requests.get` ו-`time.sleep` מוחלפים ב-`patch`):
 
 | קובץ | מקרים | מה נבדק |
 |---|---|---|
 | `test_models.py` | 6 | שלב 1: מחיר מומלץ לשלושת הסוגים (`parametrize`), מעבר סטטוס אסור, עמלה ותשלום, טעינת קובץ (`tmp_path`) |
-| `test_api_client.py` | 5 | הצלחה, Timeout עד מיצוי 3 ניסיונות, הצלחה אחרי כשל זמני, שגיאת HTTP ללא Retry, שדה חסר |
+| `test_api_client.py` | 5 | הצלחה (רק ימי יום טוב), Timeout עד מיצוי 3 ניסיונות, הצלחה אחרי כשל זמני, שגיאת HTTP ללא Retry, שדה חסר |
 | `test_strategies.py` | 2 | שתי החלופות של Strategy, כולל מקרה הגבול (14 ימים) |
-| `test_services.py` | 3 | המרה לכל מטבע, מדיניות כשל, תהליך משולב: פרסום → מכירה → 3 Observers |
+| `test_services.py` | 6 | יום העסקים הבא (חמישי, שישי, פסח – `parametrize`), הזזת תאריכים בקריאה אחת, מדיניות כשל, תהליך משולב: פרסום → מכירה → 3 Observers |
 | `test_async_processing.py` | 1 | תוצאות זהות בשתי הגרסאות, בסדר הקלט |
 | `test_threaded_processing.py` | 1 | 8 קונים, אישור אחד בלבד, מצב סופי `sold` |
 | `test_agreement_expiry.py` | 3 | היכולת שפותחה ב-TDD |
 
 **חיבור אמיתי:** `python main.py --stage2-only --live`
 
-הרצה אמיתית ב-28/10/2026 (Windows, Python 3.14), מקוצר:
+הרצה אמיתית ב-02/11/2026 (Windows, Python 3.14), סעיף 12 מהפלט:
 
 ```
-12. Stage 2 – mode: LIVE – real rates from https://api.frankfurter.dev/v1/latest
-12 ads published, 0 held, 0 items skipped – LIVE rates of 2026-10-27
-  rates used (LIVE): 1 ₪ = 0.29409 EUR, 0.32791 USD
-   [GlobalMarket] Compact Mirrorless Camera (OpticZoom, 64 | 436.78 USD – active
-   [EuroBay] Compact Mirrorless Camera (Opt | 391.73 EUR – active
+12. Stage 2 – end dates on business days only – mode: LIVE – real Israeli holidays from https://www.hebcal.com/hebcal
+3 end date(s) moved, 1 confirmed, 0 pending – LIVE calendar, 2 Yom Tov day(s) in range
+  Yom Tov from the calendar: 2027-04-22 Pesach I (פסח א׳)
+  Yom Tov from the calendar: 2027-04-28 Pesach VII (פסח ז׳)
+  A-201 Yael Katz   2027-04-22 -> 2027-04-25   because: 2027-04-22 Pesach I; 2027-04-23 Friday; 2027-04-24 Shabbat
+  A-202 Omer Biton  2027-04-28 -> 2027-04-29   because: 2027-04-28 Pesach VII
+  A-203 Dana Levi   2027-04-30 -> 2027-05-02   because: 2027-04-30 Friday; 2027-05-01 Shabbat
+  A-204 Ron Azulay  2027-05-05 confirmed (business day)
 ...
-Rates used in this run: REAL (live)
+Calendar used in this run: REAL (live)
 ```
 
-השערים התקבלו מהשירות, נבדקו ושימשו לחישוב המחיר בכל ערוץ זר: ‏1332 ₪ × 0.32791 = 436.78 USD.
+השירות החזיר את החגים בטווח; נשמרו רק שני ימי יום טוב (פסח א׳ ושביעי של פסח), וחול המועד וערב החג לא נחשבו ימים סגורים.
 
 **TDD – `SaleAgreement.expire_overdue(today)`:** הסכם שהסתיים מעביר את המוצרים שבפרסום ל-`expired` ומחזיר אותם, כדי לשאול את הלקוח אם להאריך.
 - Red: [`67f6d59`](https://github.com/mat2610/YallaSell-Project/commit/67f6d59) – הבדיקות נכשלות (`AttributeError`)

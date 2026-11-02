@@ -1,7 +1,7 @@
 """YallaSell – demonstration of stage 1 and stage 2.
 
-    python3 main.py                 offline: exchange rates from data/demo_rates.json (SIMULATED)
-    python3 main.py --live          real exchange rates from the Frankfurter service (network)
+    python3 main.py                 offline: Israeli holidays from data/demo_holidays.json (SIMULATED)
+    python3 main.py --live          real Israeli holidays from the Hebcal service (network)
     python3 main.py --stage2-only   skip the stage 1 part
 """
 
@@ -15,21 +15,27 @@ from itertools import islice
 from pathlib import Path
 
 from yallasell import iterators, processing
-from yallasell.api_client import ExchangeRateClient, FileRatesClient, RatesConnectionError
+from yallasell.api_client import CalendarConnectionError, FileCalendarClient, HebcalClient
 from yallasell.async_processing import (SimulatedPlatforms, StatusRequest, ads_needing_attention,
                                         collect_concurrent, collect_sequential)
 from yallasell.config import load_settings, setup_logging
 from yallasell.context_managers import ReviewSession
-from yallasell.models import Clothing, Marketplace, OwnCatalog, Sale
+from yallasell.models import Client, Marketplace, OwnCatalog, Sale, SaleAgreement
 from yallasell.observers import ClientNotifier, ListingCloser, SaleEvents, SalesStatistics
 from yallasell.repository import ItemRepository
-from yallasell.services import PublishingService, SalesService
+from yallasell.services import AgreementScheduler, PublishingService, SalesService
 from yallasell.strategies import StandardPricing, UrgentDiscountPricing
 from yallasell.threaded_processing import PurchaseDesk, run_buyers
 
 DATA_FILE = Path(__file__).parent / "data" / "sample_data.jsonl"
-DEMO_RATES_FILE = Path(__file__).parent / "data" / "demo_rates.json"
+DEMO_HOLIDAYS_FILE = Path(__file__).parent / "data" / "demo_holidays.json"
 TODAY = date.today()
+
+# New agreements signed in March 2027, 30 days each: their end dates fall around Pesach.
+NEW_AGREEMENTS = [("A-201", "Yael Katz", "Netanya", date(2027, 4, 22)),     # Pesach I (Thursday)
+                  ("A-202", "Omer Biton", "Ashdod", date(2027, 4, 28)),     # Pesach VII (Wednesday)
+                  ("A-203", "Dana Levi", "Holon", date(2027, 4, 30)),       # Friday
+                  ("A-204", "Ron Azulay", "Haifa", date(2027, 5, 5))]       # ordinary Wednesday
 
 
 def title(text: str) -> None:
@@ -179,91 +185,96 @@ def stage1() -> None:
 # ==================================================================== STAGE 2
 
 class SimulatedOutage:
-    """Stands for the rates service being down. Used ONLY in section 14, always labelled."""
+    """Stands for the calendar service being down. Used ONLY in section 13, always labelled."""
 
-    def get_rates(self, base, symbols):
-        raise RatesConnectionError("SIMULATED outage: rates service unreachable after 3 attempts")
+    def get_holidays(self, start, end):
+        raise CalendarConnectionError("SIMULATED outage: calendar service unreachable after 3 attempts")
+
+
+def new_agreements() -> list[SaleAgreement]:
+    return [SaleAgreement(aid, Client(100 + n, name, city), end)
+            for n, (aid, name, city, end) in enumerate(NEW_AGREEMENTS, start=1)]
 
 
 def stage2(live: bool) -> None:
     settings = load_settings()
     setup_logging(settings.log_level)
     if live:
-        rates_client = ExchangeRateClient(settings.rates_api_url, settings.rates_timeout,
-                                          settings.rates_max_attempts, settings.rates_retry_wait)
-        mode = f"LIVE – real rates from {settings.rates_api_url}"
+        calendar_client = HebcalClient(settings.calendar_api_url, settings.calendar_timeout,
+                                       settings.calendar_max_attempts, settings.calendar_retry_wait)
+        mode = f"LIVE – real Israeli holidays from {settings.calendar_api_url}"
     else:
-        rates_client = FileRatesClient(DEMO_RATES_FILE)
-        mode = f"OFFLINE – SIMULATED rates from data/{DEMO_RATES_FILE.name} (use --live for real rates)"
+        calendar_client = FileCalendarClient(DEMO_HOLIDAYS_FILE)
+        mode = f"OFFLINE – SIMULATED holidays from data/{DEMO_HOLIDAYS_FILE.name} (use --live for real data)"
 
+    # ------------------------------------------------------------ 12. external service
+    title(f"12. Stage 2 – end dates on business days only – mode: {mode}")
+    agreements = new_agreements()
+    report = AgreementScheduler(calendar_client).schedule(agreements)    # dependency from outside
+    print(report.summary())
+    if report.calendar:
+        for holiday in sorted(report.calendar.holidays.values(), key=lambda h: h.day):
+            print(f"  Yom Tov from the calendar: {holiday.day} {holiday.title} ({holiday.hebrew})")
+    for agreement, old, new, reasons in report.moved:
+        print(f"  {agreement.agreement_id} {agreement.client.name:<11} {old} -> {new}   because: {'; '.join(reasons)}")
+    for agreement in report.confirmed:
+        print(f"  {agreement.agreement_id} {agreement.client.name:<11} {agreement.end_date} confirmed (business day)")
+
+    # ------------------------------------------------------------ 13. failure policy
+    title("13. Failure policy – calendar service down (SIMULATED outage, not real data)")
+    agreements = new_agreements()
+    outage = AgreementScheduler(SimulatedOutage()).schedule(agreements)
+    print(outage.summary())
+    for agreement, proposal in outage.pending:
+        print(f"  {agreement.agreement_id} end date kept {agreement.end_date} – "
+              f"weekend-only proposal {proposal}, holidays NOT checked -> pending")
+    print("  No end date was changed or confirmed with incomplete information.")
+
+    # ------------------------------------------------------------ 14. strategy + publishing
     repo = ItemRepository.from_jsonl(DATA_FILE)            # fresh objects, independent of stage 1
     agreement_of = processing.agreement_by_item(repo.agreements)
-    channels = [OwnCatalog(),
-                Marketplace("Marketplace A", 0.10),
-                Marketplace("GlobalMarket", 0.12, currency="USD"),
-                Marketplace("EuroBay", 0.10, max_title_length=30, currency="EUR")]
-
-    # ------------------------------------------------------------ 12. review + rates
-    title(f"12. Stage 2 – mode: {mode}")
+    channels = [OwnCatalog(), Marketplace("Marketplace A", 0.10), Marketplace("Marketplace B", 0.12, 20)]
+    title("14. Strategy – price policy, then publishing on 3 Israeli channels")
     to_publish = []
     for item_id in (207, 214, 217):                         # new requests whose agreement is running
         item = repo.get(item_id)
         with ReviewSession(item):
             item.change_status("approved")
         to_publish.append((item, agreement_of[item_id].days_left(TODAY)))
-    print("Approved:", [f"#{item.item_id} ({days} days left)" for item, days in to_publish])
-
-    # ------------------------------------------------------------ 13. strategy + publishing
-    title("13. Strategy – price policy, then publishing on 4 channels (2 foreign)")
     standard, urgent = StandardPricing(), UrgentDiscountPricing(threshold_days=21, discount=0.15)
     for item, days in to_publish:
         print(f"  #{item.item_id} {item.title:<34} {days:>4} days  "
               f"standard {standard.price(item, days):>5} ₪   urgent policy {urgent.price(item, days):>5} ₪")
-    publisher = PublishingService(rates_client, urgent, channels)     # dependencies from outside
-    report = publisher.publish(to_publish)
-    print(report.summary())
-    if report.rates:
-        print(f"  rates used ({report.rates.source.upper()}): 1 ₪ = "
-              + ", ".join(f"{r} {c}" for c, r in report.rates.rates.items()))
-    for listing in report.published:
+    publisher = PublishingService(urgent, channels)         # dependencies from outside
+    published = publisher.publish(to_publish)
+    print(f"{len(published.published)} ads published, {len(published.skipped)} skipped")
+    for listing in published.published:
         print("  ", listing)
-    for item, channel in report.held:
-        print(f"   HELD #{item.item_id} on {channel.name}: no valid {channel.currency} rate")
-
-    # ------------------------------------------------------------ 14. failure policy
-    title("14. Failure policy – rates service down (SIMULATED outage, not real data)")
-    outage_item = Clothing(900, "Demo hoodie", "good", 1, 120, "L", "Cotton", status="approved")
-    outage = PublishingService(SimulatedOutage(), StandardPricing(), channels).publish([(outage_item, 30)])
-    print(outage.summary())
-    print("  published:", [l.channel.name for l in outage.published])
-    print("  held     :", [c.name for _, c in outage.held], "-> no foreign ad with a wrong price")
-    print(f"  item status: {outage_item.status} (still on sale in Israel)")
 
     # ------------------------------------------------------------ 15. observer
     title("15. Observer – one sale, three reactions")
     events = SaleEvents()
-    closer = ListingCloser(publisher.listings_by_item)
     stats = SalesStatistics()
     client_of = {item_id: agr.client.name for item_id, agr in agreement_of.items()}
     notifier = ClientNotifier(client_of)
-    for observer in (closer, stats, notifier):
+    for observer in (ListingCloser(publisher.listings_by_item), stats, notifier):
         events.subscribe(observer)
     sales = SalesService(events)
     camera_ads = publisher.listings_by_item[207]
-    sold_ad = next((l for l in camera_ads if l.channel.is_foreign), camera_ads[0])
+    sold_ad = camera_ads[1]                                 # sold on Marketplace A
     sale = sales.sell(sold_ad, sold_ad.price)
     print("Sale:", sale)
     print("  ads of #207 now:", {l.channel.name: l.status for l in camera_ads})
-    print("  statistics     :", stats.sales_by_channel, stats.commission_by_currency)
+    print("  statistics     :", stats.sales_by_channel, f"commission {stats.total_commission:.2f} ₪")
     print("  message to     :", *notifier.outbox[0], sep="\n    ")
 
     # ------------------------------------------------------------ 16. async
     title("16. Async – status of 3 ads on 3 platforms (SIMULATED platforms)")
-    requests_ = [StatusRequest("GlobalMarket", 214), StatusRequest("EuroBay", 217),
-                 StatusRequest("Marketplace A", 214)]
-    answers = {("GlobalMarket", 214): (0.6, "active", 3),
-               ("EuroBay", 217): (0.3, "active", 41),
-               ("Marketplace A", 214): (0.2, "active", 7)}
+    requests_ = [StatusRequest("Marketplace A", 214), StatusRequest("Marketplace B", 217),
+                 StatusRequest("YallaSell catalog", 214)]
+    answers = {("Marketplace A", 214): (0.6, "active", 3),
+               ("Marketplace B", 217): (0.3, "active", 41),
+               ("YallaSell catalog", 214): (0.2, "active", 7)}
     start = time.perf_counter()
     sequential = asyncio.run(collect_sequential(SimulatedPlatforms(answers), requests_))
     t_seq = time.perf_counter() - start
@@ -281,7 +292,7 @@ def stage2(live: bool) -> None:
     title("17. Threads – 3 buyers press 'buy' on the same unique item at the same time")
     action_cam = repo.get(216)
     desk = PurchaseDesk(processing_delay=0.05)
-    run_buyers(desk, action_cam, ["buyer on GlobalMarket", "buyer on EuroBay", "buyer on Marketplace A"])
+    run_buyers(desk, action_cam, ["buyer on Marketplace A", "buyer on Marketplace B", "buyer on catalog"])
     print(f"confirmed: {len(desk.confirmed)} | refused: {len(desk.refused)} | "
           f"item #{action_cam.item_id} is {action_cam.status}")
 
@@ -291,7 +302,7 @@ def stage2(live: bool) -> None:
         for item in agreement.expire_overdue(TODAY):
             print(f"  #{item.item_id} {item.title} -> {item.status}; ask {agreement.client.name}: "
                   f"extend (extend) or take back free (close_unsold)?")
-    print(f"\nRates used in this run: {'REAL (live)' if live else 'SIMULATED (offline file)'}")
+    print(f"\nCalendar used in this run: {'REAL (live)' if live else 'SIMULATED (offline file)'}")
 
 
 def main() -> None:
