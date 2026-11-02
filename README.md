@@ -221,7 +221,22 @@ main.py                  הדגמת שלב 1 ושלב 2
 
 **חיבור אמיתי:** `python main.py --stage2-only --live`
 
-<!-- LIVE_RUN -->
+הרצה אמיתית ב-02/11/2026 (Windows, Python 3.14), סעיף 12 מהפלט:
+
+```
+12. Stage 2 – end dates on business days only – mode: LIVE – real Israeli holidays from https://www.hebcal.com/hebcal
+3 end date(s) moved, 1 confirmed, 0 pending – LIVE calendar, 2 Yom Tov day(s) in range
+  Yom Tov from the calendar: 2027-04-22 Pesach I (פסח א׳)
+  Yom Tov from the calendar: 2027-04-28 Pesach VII (פסח ז׳)
+  A-201 Yael Katz   2027-04-22 -> 2027-04-25   because: 2027-04-22 Pesach I; 2027-04-23 Friday; 2027-04-24 Shabbat
+  A-202 Omer Biton  2027-04-28 -> 2027-04-29   because: 2027-04-28 Pesach VII
+  A-203 Dana Levi   2027-04-30 -> 2027-05-02   because: 2027-04-30 Friday; 2027-05-01 Shabbat
+  A-204 Ron Azulay  2027-05-05 confirmed (business day)
+...
+Calendar used in this run: REAL (live)
+```
+
+השירות החזיר את החגים בטווח; נשמרו רק שני ימי יום טוב (פסח א׳ ושביעי של פסח), וחול המועד וערב החג לא נחשבו ימים סגורים.
 
 **TDD – `SaleAgreement.expire_overdue(today)`:** הסכם שהסתיים מעביר את המוצרים שבפרסום ל-`expired` ומחזיר אותם, כדי לשאול את הלקוח אם להאריך.
 - Red: [`67f6d59`](https://github.com/mat2610/YallaSell-Project/commit/67f6d59) – הבדיקות נכשלות (`AttributeError`)
