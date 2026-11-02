@@ -7,8 +7,8 @@ from datetime import date
 
 import pytest
 
-from yallasell.api_client import ExchangeRates
-from yallasell.models import Electronics, Marketplace, OwnCatalog
+from yallasell.api_client import Holiday, HolidayCalendar
+from yallasell.models import Client, Electronics, Marketplace, OwnCatalog, SaleAgreement
 
 
 @pytest.fixture
@@ -18,12 +18,20 @@ def phone():
 
 
 @pytest.fixture
-def demo_rates():
-    return ExchangeRates("ILS", date(2026, 10, 27), {"USD": 0.27, "EUR": 0.25}, source="simulated")
+def channels():
+    return [OwnCatalog(), Marketplace("Marketplace A", 0.10), Marketplace("Marketplace B", 0.12)]
 
 
 @pytest.fixture
-def channels():
-    return [OwnCatalog(),
-            Marketplace("GlobalMarket", 0.12, currency="USD"),
-            Marketplace("EuroBay", 0.10, currency="EUR")]
+def pesach_calendar():
+    # Israel 2027: Pesach I = Thursday 22/04, Pesach VII = Wednesday 28/04 (both Yom Tov)
+    holidays = {date(2027, 4, 22): Holiday(date(2027, 4, 22), "Pesach I", "פסח א׳"),
+                date(2027, 4, 28): Holiday(date(2027, 4, 28), "Pesach VII", "פסח ז׳")}
+    return HolidayCalendar(date(2027, 4, 15), date(2027, 5, 19), holidays, source="simulated")
+
+
+@pytest.fixture
+def make_agreement():
+    def make(agreement_id: str, end: date) -> SaleAgreement:
+        return SaleAgreement(agreement_id, Client(1, "Dana Cohen", "Haifa"), end)
+    return make

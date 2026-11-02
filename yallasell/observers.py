@@ -59,19 +59,18 @@ class ListingCloser(SaleObserver):
 
 
 class SalesStatistics(SaleObserver):
-    """Number of sales per channel and per category, and commission earned per currency."""
+    """Number of sales per channel and per category, and total commission earned (₪)."""
 
     def __init__(self):
         self.sales_by_channel: dict[str, int] = {}
         self.sales_by_category: dict[str, int] = {}
-        self.commission_by_currency: dict[str, float] = {}
+        self.total_commission: float = 0.0
 
     def on_sale(self, sale: Sale, listing: Listing) -> None:
-        channel, category, cur = sale.channel.name, sale.item.category, sale.currency
+        channel, category = sale.channel.name, sale.item.category
         self.sales_by_channel[channel] = self.sales_by_channel.get(channel, 0) + 1
         self.sales_by_category[category] = self.sales_by_category.get(category, 0) + 1
-        self.commission_by_currency[cur] = round(
-            self.commission_by_currency.get(cur, 0) + sale.commission, 2)
+        self.total_commission = round(self.total_commission + sale.commission, 2)
 
 
 class ClientNotifier(SaleObserver):
@@ -84,6 +83,6 @@ class ClientNotifier(SaleObserver):
     def on_sale(self, sale: Sale, listing: Listing) -> None:
         client = self.client_of_item.get(sale.item.item_id, "unknown client")
         message = (f"Your item '{sale.item.title}' was sold on {sale.channel.name}. "
-                   f"You will receive {sale.payout_amount:.2f} {sale.currency}.")
+                   f"You will receive {sale.payout_amount:.2f} ₪.")
         self.outbox.append((client, message))
         logger.info("Sale message prepared for item %s", sale.item.item_id)   # no personal data in logs

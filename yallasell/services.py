@@ -1,9 +1,13 @@
-"""Business services of stage 2: publishing with real exchange rates, and recording sales.
+"""Business services of stage 2.
 
-The services receive their dependencies from outside (constructor):
-- PublishingService gets a rates client (real, offline file, or a Mock in the tests)
-  and a pricing strategy;
-- SalesService gets the SaleEvents subject with its observers.
+- AgreementScheduler: an agreement must end on a business day in Israel, so the client
+  can be contacted ("extend or take the item back?") and can come to take the item back.
+  It uses the Jewish holidays from the external calendar service.
+- PublishingService: publishes approved items, at the price given by a pricing strategy.
+- SalesService: records a sale and announces it to the observers.
+
+The services receive their dependencies from outside (constructor): the calendar client
+(real, offline file, or a Mock in the tests), the pricing strategy and the sale events.
 So each part has one job, can be replaced, and can be tested without network.
 """
 
@@ -11,99 +15,138 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Protocol
 
-from yallasell.api_client import ExchangeRates, RatesError
-from yallasell.models import BASE_CURRENCY, Item, Listing, Sale, SalesChannel
+from yallasell.api_client import CalendarError, HolidayCalendar
+from yallasell.models import Item, Listing, Sale, SaleAgreement, SalesChannel
 from yallasell.observers import SaleEvents
 from yallasell.strategies import PricingStrategy
 
 logger = logging.getLogger(__name__)
 
+WEEKEND = {4: "Friday", 5: "Shabbat"}          # date.weekday(): Monday = 0 ... Friday = 4, Saturday = 5
+LOOK_AHEAD_DAYS = 14                           # a long holiday + weekend never needs more
 
-class RatesProvider(Protocol):
-    """What the service needs from a rates client (real one, file one or a Mock)."""
 
-    def get_rates(self, base: str, symbols: list[str]) -> ExchangeRates: ...
+# ---------------------------------------------------------------- business days
 
+def closed_reason(day: date, calendar: HolidayCalendar | None) -> str | None:
+    """Why this day is not a business day in Israel, or None if it is one."""
+    if day.weekday() in WEEKEND:
+        return WEEKEND[day.weekday()]
+    if calendar is not None:
+        holiday = calendar.holiday_on(day)
+        if holiday is not None:
+            return holiday.title
+    return None
+
+
+def next_business_day(day: date, calendar: HolidayCalendar | None) -> tuple[date, list[str]]:
+    """The day itself if it is a business day, otherwise the next one (and the reasons)."""
+    reasons: list[str] = []
+    while (reason := closed_reason(day, calendar)) is not None:
+        reasons.append(f"{day.isoformat()} {reason}")
+        day += timedelta(days=1)
+    return day, reasons
+
+
+class CalendarProvider(Protocol):
+    """What the scheduler needs from a calendar client (real one, file one or a Mock)."""
+
+    def get_holidays(self, start: date, end: date) -> HolidayCalendar: ...
+
+
+@dataclass
+class ScheduleReport:
+    moved: list[tuple[SaleAgreement, date, date, list[str]]] = field(default_factory=list)
+    confirmed: list[SaleAgreement] = field(default_factory=list)          # already on a business day
+    pending: list[tuple[SaleAgreement, date]] = field(default_factory=list)  # holidays not checked
+    calendar: HolidayCalendar | None = None
+    calendar_error: str | None = None
+
+    def summary(self) -> str:
+        if self.calendar is not None:
+            source = (f"{self.calendar.source.upper()} calendar, "
+                      f"{len(self.calendar.holidays)} Yom Tov day(s) in range")
+        else:
+            source = f"NO calendar ({self.calendar_error})"
+        return (f"{len(self.moved)} end date(s) moved, {len(self.confirmed)} confirmed, "
+                f"{len(self.pending)} pending – {source}")
+
+
+class AgreementScheduler:
+    """Makes sure every agreement ends on a business day.
+
+    Failure policy (business decision): if the holidays cannot be obtained or are invalid,
+    NO end date is changed or confirmed. The weekend-only proposal is kept in
+    report.pending, to be checked again – an end date that falls on a holiday would mean
+    calling the client and returning items on a day when nobody works.
+    """
+
+    def __init__(self, calendar_client: CalendarProvider):
+        self.calendar_client = calendar_client
+
+    def schedule(self, agreements: list[SaleAgreement]) -> ScheduleReport:
+        report = ScheduleReport()
+        if not agreements:
+            return report
+        start = min(a.end_date for a in agreements)
+        end = max(a.end_date for a in agreements) + timedelta(days=LOOK_AHEAD_DAYS)
+        try:
+            report.calendar = self.calendar_client.get_holidays(start, end)   # ONE call for all
+        except CalendarError as error:
+            report.calendar_error = str(error)
+            logger.warning("Holidays unavailable, end dates left unchanged: %s", error)
+
+        for agreement in agreements:
+            new_end, reasons = next_business_day(agreement.end_date, report.calendar)
+            if report.calendar is None:
+                report.pending.append((agreement, new_end))   # weekend known, holidays not
+            elif new_end == agreement.end_date:
+                report.confirmed.append(agreement)
+            else:
+                old_end = agreement.end_date
+                agreement.end_date = new_end
+                report.moved.append((agreement, old_end, new_end, reasons))
+        return report
+
+
+# ---------------------------------------------------------------- publishing
 
 @dataclass
 class PublishReport:
     published: list[Listing] = field(default_factory=list)
-    held: list[tuple[Item, SalesChannel]] = field(default_factory=list)   # waiting for a valid rate
     skipped: list[Item] = field(default_factory=list)                     # not approved
-    rates: ExchangeRates | None = None
-    rates_error: str | None = None
-
-    def summary(self) -> str:
-        if self.rates is not None:
-            source = f"{self.rates.source.upper()} rates of {self.rates.rates_date}"
-        elif self.rates_error:
-            source = f"NO rates ({self.rates_error})"
-        else:
-            source = "no foreign channel"
-        return (f"{len(self.published)} ads published, {len(self.held)} held, "
-                f"{len(self.skipped)} items skipped – {source}")
 
 
 class PublishingService:
-    """Publishes approved items on every channel, converting the price for foreign channels.
+    """Publishes approved items on every channel, at the price chosen by the strategy."""
 
-    Failure policy (business decision): if the rates cannot be obtained or are invalid,
-    NO ad is published on a foreign channel – a wrong or old price in another currency
-    could sell the item below the client's price. The item is still published on the
-    shekel channels, and the foreign ads are kept in report.held to be published later.
-    """
-
-    def __init__(self, rates_client: RatesProvider, pricing: PricingStrategy,
-                 channels: list[SalesChannel]):
+    def __init__(self, pricing: PricingStrategy, channels: list[SalesChannel]):
         if not channels:
             raise ValueError("at least one channel is needed")
-        self.rates_client = rates_client
         self.pricing = pricing
         self.channels = channels
         self.listings_by_item: dict[int, list[Listing]] = {}
 
-    def _foreign_currencies(self) -> list[str]:
-        return sorted({channel.currency for channel in self.channels if channel.is_foreign})
-
-    def _fetch_rates(self, report: PublishReport) -> None:
-        currencies = self._foreign_currencies()
-        if not currencies:
-            return
-        try:
-            report.rates = self.rates_client.get_rates(BASE_CURRENCY, currencies)
-        except RatesError as error:
-            report.rates_error = str(error)
-            logger.warning("Foreign channels on hold, rates unavailable: %s", error)
-
     def publish(self, entries: list[tuple[Item, int]]) -> PublishReport:
         """entries: (item, days left in its agreement). Only 'approved' items are published."""
         report = PublishReport()
-        self._fetch_rates(report)
-
         for item, days_left in entries:
             if item.status != "approved":
                 report.skipped.append(item)
                 continue
-            price_ils = self.pricing.price(item, days_left)
-            published_now = 0
+            price = self.pricing.price(item, days_left)
             for channel in self.channels:
-                if channel.is_foreign:
-                    if report.rates is None:
-                        report.held.append((item, channel))
-                        continue
-                    price = report.rates.convert(price_ils, channel.currency)
-                else:
-                    price = price_ils
                 listing = channel.publish(item, price)
                 self.listings_by_item.setdefault(item.item_id, []).append(listing)
                 report.published.append(listing)
-                published_now += 1
-            if published_now:
-                item.change_status("listed")
+            item.change_status("listed")
         return report
 
+
+# ---------------------------------------------------------------- sales
 
 class SalesService:
     """Records a sale and announces it. The reactions are the observers' job."""
@@ -113,7 +156,6 @@ class SalesService:
         self.sales: list[Sale] = []
 
     def sell(self, listing: Listing, price: float) -> Sale:
-        """price: in the listing's currency."""
         if listing.status != "active":
             raise ValueError(f"Listing on {listing.channel.name} is {listing.status}, it cannot be sold")
         sale = Sale(listing.item, listing.channel, price)       # validates the price first
